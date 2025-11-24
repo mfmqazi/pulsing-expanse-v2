@@ -60,7 +60,11 @@ const Settings = ({ setView, user, updateUser }) => {
             // Ensure targetSurah is set if custom, defaulting to 1
             targetSurah: settings.planType === 'custom' ? (settings.targetSurah || 1) : settings.targetSurah,
             // Ensure versesPerDay is a valid number
-            versesPerDay: parseInt(settings.versesPerDay) || 5
+            versesPerDay: parseInt(settings.versesPerDay) || 5,
+            // Ensure versesToDisplay is a valid number
+            versesToDisplay: parseInt(settings.versesToDisplay) || 5,
+            // Ensure versesDisplayMode has a default value
+            versesDisplayMode: settings.versesDisplayMode || 'specific'
         };
 
         const updates = { settings: updatedSettings };
@@ -302,6 +306,75 @@ const Settings = ({ setView, user, updateUser }) => {
                         {settings.memorizationMethod === '6446'
                             ? "The 6-4-4-6 method: Read 6x (looking), Recite 4x (memory), Read 4x (looking), Recite 6x (memory)."
                             : "Standard mode: Read, listen, and repeat at your own pace until memorized."}
+                    </p>
+                </div>
+
+                {/* Verses Display Mode */}
+                <div style={{ marginBottom: '25px' }}>
+                    <label style={{ display: 'block', marginBottom: '10px', color: 'var(--text-muted)' }}>
+                        Verses Display Mode
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                        <button
+                            onClick={() => handleChange('versesDisplayMode', 'specific')}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--glass-border)',
+                                background: settings.versesDisplayMode !== 'entireSurah' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                                color: settings.versesDisplayMode !== 'entireSurah' ? 'black' : 'white',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Specific Number
+                        </button>
+                        <button
+                            onClick={() => handleChange('versesDisplayMode', 'entireSurah')}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--glass-border)',
+                                background: settings.versesDisplayMode === 'entireSurah' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                                color: settings.versesDisplayMode === 'entireSurah' ? 'black' : 'white',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Entire Surah
+                        </button>
+                    </div>
+                    {settings.versesDisplayMode !== 'entireSurah' && (
+                        <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                                Number of Verses to Display
+                            </label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="286"
+                                value={settings.versesToDisplay === undefined || settings.versesToDisplay === null ? 5 : settings.versesToDisplay}
+                                onChange={(e) => handleChange('versesToDisplay', e.target.value === '' ? '' : e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    color: 'white',
+                                    fontSize: '1rem',
+                                    outline: 'none'
+                                }}
+                            />
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '5px' }}>
+                                Number of verses to work with in each session
+                            </p>
+                        </div>
+                    )}
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.4', marginTop: '10px' }}>
+                        {settings.versesDisplayMode === 'entireSurah'
+                            ? "Display all verses of the current Surah for comprehensive memorization."
+                            : "Display a specific number of verses to focus on smaller sections."}
                     </p>
                 </div>
 

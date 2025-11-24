@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, Pause, RotateCcw, Check, Mic, SkipForward, Type, Languages, AlertCircle, BookOpen, EyeOff } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Check, Type, Languages, AlertCircle, BookOpen, EyeOff, CheckCircle, RotateCcw, SkipForward } from 'lucide-react';
 import { getCurrentPlan, SURAH_VERSE_COUNTS, SURAH_NAMES } from '../data/memorizationPlan';
 import HadithFooter from './HadithFooter';
 
 const Memorize = ({ setView, user, updateUserProgress }) => {
     const [verses, setVerses] = useState([]);
     const [currentVerseIndex, setCurrentVerseIndex] = useState(user?.progress?.verseIndex || 0);
-    const [isPlaying, setIsPlaying] = useState(false);
+    const [playingVerseIndex, setPlayingVerseIndex] = useState(null);
     const [isHidden, setIsHidden] = useState(false);
-    const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -17,15 +16,7 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
     const [reciterName, setReciterName] = useState('');
     const [translationName, setTranslationName] = useState('');
 
-    // 6446 Method State
-    const is6446Mode = user?.settings?.memorizationMethod === '6446';
-    const [methodState, setMethodState] = useState({
-        step: 1, // 1: Read 6x, 2: Recite 4x, 3: Read 4x, 4: Recite 6x
-        count: 0
-    });
-
-    const audioRef = useRef(null);
-    const recognitionRef = useRef(null);
+    const audioRefs = useRef([]);
 
     // Save preferences
     useEffect(() => {
@@ -35,49 +26,13 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
 
     useEffect(() => {
         fetchVerses();
-        setupSpeechRecognition();
         return () => {
-            if (audioRef.current) {
-                audioRef.current.pause();
-            }
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
+            // Cleanup all audio elements
+            audioRefs.current.forEach(audio => {
+                if (audio) audio.pause();
+            });
         };
-    }, [user?.progress?.surah, user?.settings?.reciterId, user?.settings?.translationId]);
-
-    // Sync local state with user progress when it changes
-    useEffect(() => {
-        if (verses.length > 0) {
-            if (user?.progress?.verseIndex < verses.length) {
-                setCurrentVerseIndex(user.progress.verseIndex);
-            } else if (user?.progress?.verseIndex >= verses.length && verses.length > 0) {
-                setCurrentVerseIndex(0);
-            }
-        }
-    }, [verses, user?.progress?.verseIndex]);
-
-    // Reset 6446 state when verse changes
-    useEffect(() => {
-        setMethodState({ step: 1, count: 0 });
-        // Reset visibility based on mode
-        if (is6446Mode) {
-            setIsHidden(false); // Step 1 is always looking
-        } else {
-            setIsHidden(false);
-        }
-    }, [currentVerseIndex, is6446Mode]);
-
-    // Handle 6446 Visibility Logic
-    useEffect(() => {
-        if (is6446Mode) {
-            if (methodState.step === 2 || methodState.step === 4) {
-                setIsHidden(true);
-            } else {
-                setIsHidden(false);
-            }
-        }
-    }, [methodState.step, is6446Mode]);
+    }, [user?.progress?.surah, user?.settings?.reciterId, user?.settings?.translationId, user?.settings?.versesDisplayMode, user?.settings?.versesToDisplay]);
 
     const fetchVerses = async () => {
         setIsLoading(true);
@@ -92,7 +47,19 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                 reciterId = 7;
             }
 
-            const response = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${surah}?language=en&translations=${translationId},57&audio=${reciterId}&per_page=300&fields=text_uthmani,text_imlaei_simple`);
+            // Determine verses display mode
+            const versesDisplayMode = user?.settings?.versesDisplayMode || 'specific';
+            const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
+
+            // Calculate pagination parameters based on display mode
+            let perPage = 300; // Default to fetch all verses
+
+            if (versesDisplayMode !== 'entireSurah') {
+                // Specific number mode - fetch only the specified number
+                perPage = versesToDisplay;
+            }
+
+            const response = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${surah}?language=en&translations=${translationId},57&audio=${reciterId}&page=1&per_page=${perPage}&fields=text_uthmani,text_imlaei_simple`);
 
             if (!response.ok) throw new Error('Failed to fetch verses');
 
@@ -138,167 +105,120 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
         }
     };
 
+    const togglePlayVerse = (index) => {
+        const audio = audioRefs.current[index];
+        if (!audio) return;
 
-    const setupSpeechRecognition = () => {
-        if ('webkitSpeechRecognition' in window) {
-            const recognition = new window.webkitSpeechRecognition();
-            recognition.continuous = false;
-            recognition.lang = 'ar-SA';
-            recognition.interimResults = false;
+        // Pause all other audios
+        audioRefs.current.forEach((a, i) => {
+            if (a && i !== index) {
+                a.pause();
+                a.currentTime = 0;
+            }
+        });
 
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
-                checkRecitation(transcript);
-                setIsListening(false);
-            };
-
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error', event.error);
-                setIsListening(false);
-                setFeedback('Error listening. Please try again.');
-            };
-
-            recognitionRef.current = recognition;
-        }
-    };
-
-    const checkRecitation = (transcript) => {
-        if (transcript.length > 5) {
-            setFeedback('Masha\'Allah! Good recitation.');
-            // For 6446, we could auto-advance count here, but let's keep it manual for control
+        if (playingVerseIndex === index) {
+            audio.pause();
+            setPlayingVerseIndex(null);
         } else {
-            setFeedback('Try again. Make sure to recite clearly.');
+            audio.play();
+            setPlayingVerseIndex(index);
         }
     };
 
-    const togglePlay = () => {
-        if (audioRef.current) {
-            if (isPlaying) {
-                audioRef.current.pause();
-            } else {
-                audioRef.current.play();
-            }
-            setIsPlaying(!isPlaying);
-        }
-    };
-
-    const toggleListen = () => {
-        if (isListening) {
-            recognitionRef.current.stop();
-            setIsListening(false);
-        } else {
-            setFeedback('Listening...');
-            recognitionRef.current.start();
-            setIsListening(true);
-        }
-    };
-
-    const saveProgress = (newIndex, extraUpdates = {}, shouldUpdateProgress = false) => {
-        const currentSurah = user?.progress?.surah || 1;
-
-        let updates = {
-            verseIndex: newIndex,
-            ...extraUpdates
-        };
-
-        if (shouldUpdateProgress) {
-            const plan = getCurrentPlan(currentSurah, newIndex, user?.settings);
-            const allMemorized = extraUpdates.memorized || user?.progress?.memorized || {};
-            const surahMemorized = allMemorized[currentSurah] || [];
-            const today = new Date().toDateString();
-            const lastActivityDate = user?.lastActivityDate;
-            let dailyMemorized = user?.progress?.dailyMemorized || [];
-
-            if (lastActivityDate !== today) {
-                dailyMemorized = [];
-            }
-
-            if (extraUpdates.memorized) {
-                const verseKey = `${currentSurah}-${newIndex}`;
-                if (!dailyMemorized.includes(verseKey)) {
-                    dailyMemorized = [...dailyMemorized, verseKey];
-                }
-            }
-
-            const versesPerDay = user?.settings?.planType === 'custom'
-                ? (parseInt(user?.settings?.versesPerDay) || 5)
-                : Math.max(1, Math.ceil(6236 / ((parseFloat(user?.settings?.targetDuration) || 2) * 365)));
-
-            const dailyGoalPercent = Math.min(100, Math.round((dailyMemorized.length / versesPerDay) * 100));
-
-            let planProgressPercent = 0;
-            if (plan) {
-                const totalVersesInPlan = plan.endVerse - plan.startVerse + 1;
-                let memorizedInPlan = 0;
-                for (let i = plan.startVerse - 1; i < plan.endVerse; i++) {
-                    if (surahMemorized.includes(i)) {
-                        memorizedInPlan++;
-                    }
-                }
-                planProgressPercent = Math.round((memorizedInPlan / totalVersesInPlan) * 100);
-            } else {
-                planProgressPercent = Math.round((surahMemorized.length / verses.length) * 100);
-            }
-
-            updates.percent = dailyGoalPercent;
-            updates.planProgress = planProgressPercent;
-            updates.dailyMemorized = dailyMemorized;
-        }
-
-        updateUserProgress(updates);
-    };
-
-    const handleNext = async (extraUpdates = {}) => {
-        if (currentVerseIndex < verses.length - 1) {
-            const newIndex = currentVerseIndex + 1;
-            setCurrentVerseIndex(newIndex);
-            setIsPlaying(false);
-            setFeedback('');
-            saveProgress(newIndex, extraUpdates, Object.keys(extraUpdates).length > 0);
-        } else {
-            const currentSurah = user?.progress?.surah || 1;
-            const memorizedInSurah = user?.progress?.memorized?.[currentSurah] || [];
-            const totalVersesInCurrentSurah = SURAH_VERSE_COUNTS[currentSurah] || verses.length;
-            const currentMemorizedList = extraUpdates.memorized?.[currentSurah] || memorizedInSurah;
-            const memorizedCount = currentMemorizedList.length;
-
-            if (memorizedCount >= totalVersesInCurrentSurah && currentSurah < 114) {
-                setFeedback('Surah Completed! Masha\'Allah! Moving to next Surah...');
-                saveProgress(currentVerseIndex, extraUpdates);
-
-                setTimeout(() => {
-                    updateUserProgress({
-                        surah: currentSurah + 1,
-                        verseIndex: 0,
-                        surahName: `Surah ${currentSurah + 1}`
-                    });
-                    setCurrentVerseIndex(0);
-                    setFeedback('');
-                }, 2000);
-            } else {
-                setFeedback('Great work! Continue memorizing the rest of this Surah.');
-                saveProgress(currentVerseIndex, extraUpdates, Object.keys(extraUpdates).length > 0);
-            }
-        }
-    };
-
-    const handlePrev = () => {
-        if (currentVerseIndex > 0) {
-            const newIndex = currentVerseIndex - 1;
-            setCurrentVerseIndex(newIndex);
-            setIsPlaying(false);
-            setFeedback('');
-            updateUserProgress({ verseIndex: newIndex });
-        }
-    };
-
-    const markAsMemorized = () => {
+    const toggleVerseMemorized = (verseIndex) => {
         const surahNumber = user?.progress?.surah || 1;
         const currentMemorized = user?.progress?.memorized || {};
         const surahMemorized = currentMemorized[surahNumber] || [];
 
-        if (!surahMemorized.includes(currentVerseIndex)) {
-            const updatedSurahMemorized = [...surahMemorized, currentVerseIndex];
+        let updatedSurahMemorized;
+        if (surahMemorized.includes(verseIndex)) {
+            // Unmark
+            updatedSurahMemorized = surahMemorized.filter(v => v !== verseIndex);
+        } else {
+            // Mark as memorized
+            updatedSurahMemorized = [...surahMemorized, verseIndex];
+        }
+
+        const updatedMemorized = {
+            ...currentMemorized,
+            [surahNumber]: updatedSurahMemorized
+        };
+
+        const today = new Date().toDateString();
+        const lastActivity = user?.lastActivityDate;
+        const shouldIncrementStreak = lastActivity !== today;
+
+        const updates = {
+            memorized: updatedMemorized,
+            streak: shouldIncrementStreak ? (user.streak || 0) + 1 : user.streak,
+            lastActivityDate: today
+        };
+
+        updateUserProgress(updates);
+        setFeedback(surahMemorized.includes(verseIndex) ? 'Unmarked!' : 'Marked as memorized!');
+        setTimeout(() => setFeedback(''), 2000);
+    };
+
+    const handlePrev = () => {
+        const versesDisplayMode = user?.settings?.versesDisplayMode || 'specific';
+        const currentSurah = user?.progress?.surah || 1;
+
+        if (versesDisplayMode === 'entireSurah') {
+            // Navigate to previous surah
+            if (currentSurah > 1) {
+                updateUserProgress({
+                    surah: currentSurah - 1,
+                    verseIndex: 0
+                });
+            }
+        } else {
+            // Navigate to previous set of N verses
+            const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
+            const newIndex = Math.max(0, currentVerseIndex - versesToDisplay);
+            setCurrentVerseIndex(newIndex);
+            updateUserProgress({ verseIndex: newIndex });
+        }
+    };
+
+    const handleNext = () => {
+        const versesDisplayMode = user?.settings?.versesDisplayMode || 'specific';
+        const currentSurah = user?.progress?.surah || 1;
+        const totalVersesInSurah = SURAH_VERSE_COUNTS[currentSurah] || verses.length;
+
+        if (versesDisplayMode === 'entireSurah') {
+            // Navigate to next surah
+            if (currentSurah < 114) {
+                updateUserProgress({
+                    surah: currentSurah + 1,
+                    verseIndex: 0
+                });
+            }
+        } else {
+            // Navigate to next set of N verses
+            const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
+            const newIndex = Math.min(totalVersesInSurah - 1, currentVerseIndex + versesToDisplay);
+            setCurrentVerseIndex(newIndex);
+            updateUserProgress({ verseIndex: newIndex });
+        }
+    };
+
+    const markAllDisplayedAsMemorized = () => {
+        const surahNumber = user?.progress?.surah || 1;
+        const currentMemorized = user?.progress?.memorized || {};
+        const surahMemorized = currentMemorized[surahNumber] || [];
+
+        // Mark all currently displayed verses as memorized
+        const newMemorizedVerses = [];
+        verses.forEach(verse => {
+            const verseNumber = parseInt(verse.verse_key.split(':')[1]) - 1;
+            if (!surahMemorized.includes(verseNumber)) {
+                newMemorizedVerses.push(verseNumber);
+            }
+        });
+
+        if (newMemorizedVerses.length > 0) {
+            const updatedSurahMemorized = [...surahMemorized, ...newMemorizedVerses];
             const updatedMemorized = {
                 ...currentMemorized,
                 [surahNumber]: updatedSurahMemorized
@@ -314,66 +234,25 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                 lastActivityDate: today
             };
 
-            setFeedback('Marked as memorized!');
-            handleNext(updates);
+            updateUserProgress(updates);
+
+            // Move forward after marking
+            setTimeout(() => {
+                handleNext();
+            }, 500);
         } else {
-            handleNext();
+            // Still move forward
+            setTimeout(() => {
+                handleNext();
+            }, 500);
         }
     };
-
-    // 6446 Logic
-    const getStepTarget = (step) => {
-        switch (step) {
-            case 1: return 6;
-            case 2: return 4;
-            case 3: return 4;
-            case 4: return 6;
-            default: return 6;
-        }
-    };
-
-    const getStepDescription = (step) => {
-        switch (step) {
-            case 1: return "Read 6 times (Looking)";
-            case 2: return "Recite 4 times (From Memory)";
-            case 3: return "Read 4 times (Looking)";
-            case 4: return "Recite 6 times (From Memory)";
-            default: return "";
-        }
-    };
-
-    const advance6446 = () => {
-        const target = getStepTarget(methodState.step);
-        const newCount = methodState.count + 1;
-
-        if (newCount >= target) {
-            // Step Complete
-            if (methodState.step === 4) {
-                // Full Cycle Complete
-                setFeedback("6446 Cycle Complete! Masha'Allah.");
-                setTimeout(() => {
-                    markAsMemorized();
-                }, 1000);
-            } else {
-                // Move to next step
-                setMethodState({
-                    step: methodState.step + 1,
-                    count: 0
-                });
-                setFeedback(`Step ${methodState.step} Complete! Starting Step ${methodState.step + 1}...`);
-                setTimeout(() => setFeedback(''), 2000);
-            }
-        } else {
-            // Increment count
-            setMethodState(prev => ({ ...prev, count: newCount }));
-        }
-    };
-
 
     if (isLoading) return <div className="flex-center" style={{ height: '100vh' }}>Loading verses...</div>;
     if (error) return <div className="flex-center" style={{ height: '100vh', flexDirection: 'column', gap: '20px' }}><p className="text-danger">{error}</p><button className="btn-primary" onClick={fetchVerses}>Retry</button></div>;
 
-    const currentVerse = verses[currentVerseIndex];
+    const surahNumber = user?.progress?.surah || 1;
+    const memorizedVerses = user?.progress?.memorized?.[surahNumber] || [];
 
     return (
         <div className="container" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -396,10 +275,17 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                     >
                         <Type size={24} />
                     </button>
+                    <button
+                        onClick={() => setIsHidden(!isHidden)}
+                        style={{ background: 'none', border: 'none', color: isHidden ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer' }}
+                        title="Toggle Hide/Show"
+                    >
+                        {isHidden ? <EyeOff size={24} /> : <BookOpen size={24} />}
+                    </button>
                 </div>
             </div>
 
-            <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', padding: '20px', paddingBottom: '120px', textAlign: 'center', position: 'relative', overflowY: 'auto' }}>
+            <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', paddingBottom: '80px', overflowY: 'auto' }}>
 
                 {/* Reciter and Translation Info */}
                 {(reciterName || translationName) && (
@@ -432,82 +318,27 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                     </div>
                 )}
 
-
-                <div style={{ marginBottom: '30px', width: '100%' }}>
+                <div style={{ marginBottom: '20px', textAlign: 'center' }}>
                     <h2 style={{ color: 'var(--accent)', marginBottom: '10px' }}>
-                        {SURAH_NAMES[user?.progress?.surah || 1] || `Surah ${user?.progress?.surah || 1}`} - Verse {currentVerseIndex + 1}
+                        {SURAH_NAMES[surahNumber] || `Surah ${surahNumber}`}
                     </h2>
-
-                    {/* 6446 Method Indicator */}
-                    {is6446Mode && (
-                        <div style={{ marginBottom: '20px', background: 'rgba(255,255,255,0.05)', padding: '15px', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
-                            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                6-4-4-6 Method
-                            </div>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                                {methodState.step % 2 !== 0 ? <BookOpen size={20} color="var(--primary)" /> : <EyeOff size={20} color="var(--accent)" />}
-                                {getStepDescription(methodState.step)}
-                            </div>
-                            <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                                {Array.from({ length: getStepTarget(methodState.step) }).map((_, idx) => (
-                                    <div key={idx} style={{
-                                        width: '30px',
-                                        height: '8px',
-                                        borderRadius: '4px',
-                                        background: idx < methodState.count ? 'var(--primary)' : 'rgba(255,255,255,0.2)',
-                                        transition: 'background 0.3s'
-                                    }} />
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Arabic Text */}
-                    <p style={{
-                        fontSize: '2.5rem',
-                        lineHeight: '1.6',
-                        marginBottom: '20px',
-                        filter: isHidden ? 'blur(15px)' : 'none',
-                        transition: 'filter 0.5s ease',
-                        userSelect: isHidden ? 'none' : 'auto',
-                        fontFamily: "'Amiri', serif"
-                    }}>
-                        {currentVerse?.text_uthmani}
-                    </p>
-
-                    {/* Transliteration */}
-                    {showTransliteration && (
-                        <p style={{
-                            fontSize: '1.1rem',
-                            color: 'var(--text-muted)',
-                            marginBottom: '15px',
-                            fontStyle: 'italic',
-                            filter: isHidden ? 'blur(8px)' : 'none',
-                            transition: 'filter 0.5s ease',
-                            userSelect: isHidden ? 'none' : 'auto',
-                        }}>
-                            {currentVerse?.transliteration}
+                    {user?.settings?.versesDisplayMode !== 'entireSurah' && verses.length > 0 && (
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                            Displaying {verses.length} verse{verses.length !== 1 ? 's' : ''}
+                            {verses[0] && ` (${verses[0].verse_key.split(':')[1]}-${verses[verses.length - 1].verse_key.split(':')[1]} of ${SURAH_VERSE_COUNTS[surahNumber]})`}
                         </p>
                     )}
-
-                    {/* Translation */}
-                    {showTranslation && (
-                        <p style={{
-                            fontSize: '1.2rem',
-                            marginBottom: '20px',
-                            filter: isHidden ? 'blur(8px)' : 'none',
-                            transition: 'filter 0.5s ease',
-                            userSelect: isHidden ? 'none' : 'auto',
-                        }}>
-                            {currentVerse?.translation}
+                    {user?.settings?.versesDisplayMode === 'entireSurah' && verses.length > 0 && (
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                            Entire Surah ({verses.length} verses)
                         </p>
                     )}
                 </div>
 
                 {feedback && (
                     <div style={{
-                        position: 'absolute',
-                        top: '20px',
+                        position: 'fixed',
+                        top: '100px',
                         left: '50%',
                         transform: 'translateX(-50%)',
                         background: 'rgba(16, 185, 129, 0.2)',
@@ -517,73 +348,177 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px',
-                        zIndex: 10
+                        zIndex: 1000
                     }}>
-                        {feedback.includes('Try again') ? <AlertCircle size={16} /> : <Check size={16} />}
+                        {feedback.includes('Unmarked') ? <AlertCircle size={16} /> : <Check size={16} />}
                         {feedback}
                     </div>
                 )}
 
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginBottom: '30px' }}>
-                    <button className="btn-outline" onClick={togglePlay}>
-                        {isPlaying ? <Pause /> : <Play />}
-                    </button>
-                    {!is6446Mode && (
-                        <button className="btn-outline" onClick={() => setIsHidden(!isHidden)}>
-                            {isHidden ? 'Show' : 'Hide'}
-                        </button>
-                    )}
-                    <button className={`btn-outline ${isListening ? 'listening' : ''}`} onClick={toggleListen} style={{ borderColor: isListening ? 'var(--accent)' : 'rgba(255,255,255,0.1)' }}>
-                        <Mic color={isListening ? 'var(--accent)' : 'white'} />
-                    </button>
+                {/* All Verses Displayed */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+                    {verses.map((verse, index) => {
+                        const verseNumber = parseInt(verse.verse_key.split(':')[1]) - 1;
+                        const isMemorized = memorizedVerses.includes(verseNumber);
+                        const isPlaying = playingVerseIndex === index;
+
+                        return (
+                            <div
+                                key={verse.id}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '12px',
+                                    padding: '20px',
+                                    position: 'relative'
+                                }}
+                            >
+                                {/* Verse Number and Controls */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--accent)', fontWeight: 'bold' }}>
+                                        Verse {verse.verse_key.split(':')[1]}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                        <button
+                                            onClick={() => togglePlayVerse(index)}
+                                            style={{
+                                                background: 'none',
+                                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                borderRadius: '50%',
+                                                width: '36px',
+                                                height: '36px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                color: isPlaying ? 'var(--primary)' : 'white'
+                                            }}
+                                        >
+                                            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                                        </button>
+                                        <button
+                                            onClick={() => toggleVerseMemorized(verseNumber)}
+                                            style={{
+                                                background: 'none',
+                                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                borderRadius: '50%',
+                                                width: '36px',
+                                                height: '36px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                color: isMemorized ? 'var(--accent)' : 'rgba(255, 255, 255, 0.5)'
+                                            }}
+                                        >
+                                            {isMemorized ? <CheckCircle size={18} /> : <Check size={18} />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Arabic Text */}
+                                <p style={{
+                                    fontSize: verses.length > 10 ? '1.8rem' : '2.2rem',
+                                    lineHeight: '1.8',
+                                    marginBottom: '15px',
+                                    filter: isHidden ? 'blur(12px)' : 'none',
+                                    transition: 'filter 0.5s ease',
+                                    userSelect: isHidden ? 'none' : 'auto',
+                                    fontFamily: "'Amiri', serif",
+                                    textAlign: 'right',
+                                    direction: 'rtl'
+                                }}>
+                                    {verse.text_uthmani}
+                                </p>
+
+                                {/* Transliteration */}
+                                {showTransliteration && (
+                                    <p style={{
+                                        fontSize: verses.length > 10 ? '0.9rem' : '1rem',
+                                        color: 'var(--text-muted)',
+                                        marginBottom: '12px',
+                                        fontStyle: 'italic',
+                                        filter: isHidden ? 'blur(8px)' : 'none',
+                                        transition: 'filter 0.5s ease',
+                                        userSelect: isHidden ? 'none' : 'auto',
+                                    }}>
+                                        {verse.transliteration}
+                                    </p>
+                                )}
+
+                                {/* Translation */}
+                                {showTranslation && (
+                                    <p style={{
+                                        fontSize: verses.length > 10 ? '0.95rem' : '1.1rem',
+                                        marginBottom: '0',
+                                        filter: isHidden ? 'blur(8px)' : 'none',
+                                        transition: 'filter 0.5s ease',
+                                        userSelect: isHidden ? 'none' : 'auto',
+                                        lineHeight: '1.6'
+                                    }}>
+                                        {verse.translation}
+                                    </p>
+                                )}
+
+                                {/* Audio Element */}
+                                {verse.audio_url && (
+                                    <audio
+                                        ref={el => audioRefs.current[index] = el}
+                                        src={verse.is_full_url ? verse.audio_url : `https://verses.quran.com/${verse.audio_url}`}
+                                        onEnded={() => setPlayingVerseIndex(null)}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
 
-                {is6446Mode ? (
-                    // 6446 Controls
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        <button
-                            className="btn-primary"
-                            onClick={advance6446}
-                            style={{ width: '100%', padding: '15px', fontSize: '1.1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}
-                        >
-                            <Check size={24} />
-                            {methodState.count + 1 === getStepTarget(methodState.step)
-                                ? (methodState.step === 4 ? "Finish Verse" : "Complete Step")
-                                : `Complete Repetition ${methodState.count + 1}/${getStepTarget(methodState.step)}`
-                            }
-                        </button>
-                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                            <button className="btn-outline" onClick={handlePrev} disabled={currentVerseIndex === 0} style={{ flex: 1 }}>
-                                <RotateCcw size={18} /> Prev
-                            </button>
-                            <button className="btn-outline" onClick={() => handleNext()} style={{ flex: 1 }}>
-                                Skip <SkipForward size={18} />
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    // Standard Controls
-                    <div style={{ display: 'flex', gap: '20px', width: '100%', justifyContent: 'center' }}>
-                        <button className="btn-outline" onClick={handlePrev} disabled={currentVerseIndex === 0}>
-                            <RotateCcw size={20} /> Prev
-                        </button>
-                        <button className="btn-primary" onClick={markAsMemorized}>
-                            Mark Memorized <Check size={20} style={{ marginLeft: '5px' }} />
-                        </button>
-                        <button className="btn-outline" onClick={() => handleNext()} disabled={currentVerseIndex === verses.length - 1}>
-                            Skip <SkipForward size={20} style={{ marginLeft: '5px' }} />
-                        </button>
-                    </div>
-                )}
-
-                {/* Audio Element */}
-                {currentVerse?.audio_url && (
-                    <audio
-                        ref={audioRef}
-                        src={currentVerse.is_full_url ? currentVerse.audio_url : `https://verses.quran.com/${currentVerse.audio_url}`}
-                        onEnded={() => setIsPlaying(false)}
-                    />
-                )}
+                {/* Navigation Controls */}
+                <div style={{
+                    display: 'flex',
+                    gap: '20px',
+                    width: '100%',
+                    justifyContent: 'center',
+                    marginTop: '30px',
+                    paddingTop: '20px',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                    <button
+                        className="btn-outline"
+                        onClick={handlePrev}
+                        disabled={
+                            user?.settings?.versesDisplayMode === 'entireSurah'
+                                ? (user?.progress?.surah || 1) <= 1
+                                : currentVerseIndex === 0
+                        }
+                        style={{
+                            opacity: (user?.settings?.versesDisplayMode === 'entireSurah'
+                                ? (user?.progress?.surah || 1) <= 1
+                                : currentVerseIndex === 0) ? 0.5 : 1
+                        }}
+                    >
+                        <RotateCcw size={20} /> Prev
+                    </button>
+                    <button className="btn-primary" onClick={markAllDisplayedAsMemorized}>
+                        Mark Memorized <Check size={20} style={{ marginLeft: '5px' }} />
+                    </button>
+                    <button
+                        className="btn-outline"
+                        onClick={handleNext}
+                        disabled={
+                            user?.settings?.versesDisplayMode === 'entireSurah'
+                                ? (user?.progress?.surah || 1) >= 114
+                                : currentVerseIndex >= (SURAH_VERSE_COUNTS[user?.progress?.surah || 1] - 1)
+                        }
+                        style={{
+                            opacity: (user?.settings?.versesDisplayMode === 'entireSurah'
+                                ? (user?.progress?.surah || 1) >= 114
+                                : currentVerseIndex >= (SURAH_VERSE_COUNTS[user?.progress?.surah || 1] - 1)) ? 0.5 : 1
+                        }}
+                    >
+                        Skip <SkipForward size={20} style={{ marginLeft: '5px' }} />
+                    </button>
+                </div>
             </div>
 
             <HadithFooter />
