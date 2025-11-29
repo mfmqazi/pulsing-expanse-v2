@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Award, Calendar, Activity as ActivityIcon, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { Play, Award, Calendar, Activity as ActivityIcon, Settings as SettingsIcon, LogOut, HelpCircle } from 'lucide-react';
 import { getCurrentPlan } from '../data/memorizationPlan';
 import HadithFooter from './HadithFooter';
 
@@ -18,6 +18,13 @@ const Home = ({ setView, user, onLogout }) => {
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Welcome back, {user?.firstName || user?.username}</p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                        onClick={() => setView('tutorial')}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}
+                        title="Tutorial & Guide"
+                    >
+                        <HelpCircle size={20} />
+                    </button>
                     <button
                         onClick={() => setView('settings')}
                         style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}

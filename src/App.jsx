@@ -4,6 +4,7 @@ import Home from './components/Home';
 import Memorize from './components/Memorize';
 import Plan from './components/Plan';
 import Settings from './components/Settings';
+import Tutorial from './components/Tutorial';
 import Login from './components/Login';
 import { SessionToast } from './components/SessionToast';
 import DataReset from './components/DataReset';
@@ -103,6 +104,8 @@ function App() {
         return <Plan user={user} setView={setCurrentView} updateUserProgress={updateUserProgress} />;
       case 'settings':
         return <Settings setView={setCurrentView} user={user} updateUser={updateUserProgress} />;
+      case 'tutorial':
+        return <Tutorial setView={setCurrentView} />;
       default:
         return <Home setView={setCurrentView} user={user} onLogout={handleLogout} />;
     }
