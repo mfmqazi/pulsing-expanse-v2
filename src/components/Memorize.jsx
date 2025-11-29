@@ -32,7 +32,7 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                 if (audio) audio.pause();
             });
         };
-    }, [user?.progress?.surah, user?.settings?.reciterId, user?.settings?.translationId, user?.settings?.versesDisplayMode, user?.settings?.versesToDisplay]);
+    }, [user?.progress?.surah, user?.progress?.verseIndex, user?.settings?.reciterId, user?.settings?.translationId, user?.settings?.versesDisplayMode, user?.settings?.versesToDisplay]);
 
     const fetchVerses = async () => {
         setIsLoading(true);
@@ -47,53 +47,60 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                 reciterId = 7;
             }
 
-            // Determine verses display mode
-            const versesDisplayMode = user?.settings?.versesDisplayMode || 'specific';
-            const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
+            // Use getCurrentPlan to determine what to fetch
+            // We use the current verse index to determine the dynamic plan
+            const currentPlan = getCurrentPlan(surah, currentVerseIndex, user.settings);
+            const segments = currentPlan.segments || [{ surah, startVerse: 1, endVerse: 7 }];
 
-            // Calculate pagination parameters based on display mode
-            let perPage = 300; // Default to fetch all verses
+            let allVerses = [];
 
-            if (versesDisplayMode !== 'entireSurah') {
-                // Specific number mode - fetch only the specified number
-                perPage = versesToDisplay;
+            for (const segment of segments) {
+                // Fetch verses for this segment
+                // We fetch a large chunk (up to 300) to ensure we get the verses we need
+                const perPage = 300;
+
+                const response = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${segment.surah}?language=en&translations=${translationId},57&audio=${reciterId}&page=1&per_page=${perPage}&fields=text_uthmani,text_imlaei_simple`);
+
+                if (!response.ok) throw new Error(`Failed to fetch verses for Surah ${segment.surah}`);
+
+                const data = await response.json();
+
+                // Filter verses for this segment
+                const segmentVerses = data.verses.filter(v => {
+                    const vNum = parseInt(v.verse_key.split(':')[1]);
+                    return vNum >= segment.startVerse && vNum <= segment.endVerse;
+                }).map(verse => {
+                    const translationObj = verse.translations?.find(t => t.resource_id === translationId);
+                    const rawTranslation = translationObj?.text || "Translation not available";
+                    const translation = rawTranslation.replace(/<[^>]*>/g, '');
+
+                    const transliterationObj = verse.translations?.find(t => t.resource_id === 57);
+                    const rawTransliteration = transliterationObj?.text || "";
+                    const transliteration = rawTransliteration.replace(/<[^>]*>/g, '');
+
+                    let audioUrl = verse.audio?.url;
+                    let isFullUrl = false;
+
+                    if (isCustomReciter) {
+                        const surahPad = String(segment.surah).padStart(3, '0');
+                        const versePad = String(verse.verse_key.split(':')[1]).padStart(3, '0');
+                        audioUrl = `https://everyayah.com/data/Ghamadi_40kbps/${surahPad}${versePad}.mp3`;
+                        isFullUrl = true;
+                    }
+
+                    return {
+                        ...verse,
+                        audio_url: audioUrl,
+                        is_full_url: isFullUrl,
+                        translation,
+                        transliteration
+                    };
+                });
+
+                allVerses = [...allVerses, ...segmentVerses];
             }
 
-            const response = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${surah}?language=en&translations=${translationId},57&audio=${reciterId}&page=1&per_page=${perPage}&fields=text_uthmani,text_imlaei_simple`);
-
-            if (!response.ok) throw new Error('Failed to fetch verses');
-
-            const data = await response.json();
-
-            const processedVerses = data.verses.map(verse => {
-                const translationObj = verse.translations?.find(t => t.resource_id === translationId);
-                const rawTranslation = translationObj?.text || "Translation not available";
-                const translation = rawTranslation.replace(/<[^>]*>/g, '');
-
-                const transliterationObj = verse.translations?.find(t => t.resource_id === 57);
-                const rawTransliteration = transliterationObj?.text || "";
-                const transliteration = rawTransliteration.replace(/<[^>]*>/g, '');
-
-                let audioUrl = verse.audio?.url;
-                let isFullUrl = false;
-
-                if (isCustomReciter) {
-                    const surahPad = String(surah).padStart(3, '0');
-                    const versePad = String(verse.verse_key.split(':')[1]).padStart(3, '0');
-                    audioUrl = `https://everyayah.com/data/Ghamadi_40kbps/${surahPad}${versePad}.mp3`;
-                    isFullUrl = true;
-                }
-
-                return {
-                    ...verse,
-                    audio_url: audioUrl,
-                    is_full_url: isFullUrl,
-                    translation,
-                    transliteration
-                };
-            });
-
-            setVerses(processedVerses);
+            setVerses(allVerses);
             setReciterName(user?.settings?.reciterName || 'Mishary Rashid Alafasy');
             setTranslationName(user?.settings?.translationName || 'Sahih International');
 
@@ -175,16 +182,30 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
         } else {
             // Navigate to previous set of N verses
             const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
-            const newIndex = Math.max(0, currentVerseIndex - versesToDisplay);
-            setCurrentVerseIndex(newIndex);
-            updateUserProgress({ verseIndex: newIndex });
+
+            let prevSurah = currentSurah;
+            let prevVerseIndex = currentVerseIndex - versesToDisplay;
+
+            while (prevVerseIndex < 0) {
+                if (prevSurah > 1) {
+                    prevSurah--;
+                    const totalVersesPrev = SURAH_VERSE_COUNTS[prevSurah] || 300;
+                    prevVerseIndex += totalVersesPrev;
+                } else {
+                    // Start of Quran
+                    prevVerseIndex = 0;
+                    break;
+                }
+            }
+
+            setCurrentVerseIndex(prevVerseIndex);
+            updateUserProgress({ surah: prevSurah, verseIndex: prevVerseIndex });
         }
     };
 
     const handleNext = () => {
         const versesDisplayMode = user?.settings?.versesDisplayMode || 'specific';
         const currentSurah = user?.progress?.surah || 1;
-        const totalVersesInSurah = SURAH_VERSE_COUNTS[currentSurah] || verses.length;
 
         if (versesDisplayMode === 'entireSurah') {
             // Navigate to next surah
@@ -197,9 +218,30 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
         } else {
             // Navigate to next set of N verses
             const versesToDisplay = parseInt(user?.settings?.versesToDisplay) || 5;
-            const newIndex = Math.min(totalVersesInSurah - 1, currentVerseIndex + versesToDisplay);
-            setCurrentVerseIndex(newIndex);
-            updateUserProgress({ verseIndex: newIndex });
+
+            let nextSurah = currentSurah;
+            let nextVerseIndex = currentVerseIndex + versesToDisplay;
+
+            // Check if we overflow current Surah
+            while (true) {
+                const totalVerses = SURAH_VERSE_COUNTS[nextSurah] || 300;
+                if (nextVerseIndex < totalVerses) {
+                    break; // Fits in current Surah
+                } else {
+                    // Overflow
+                    nextVerseIndex -= totalVerses;
+                    if (nextSurah < 114) {
+                        nextSurah++;
+                    } else {
+                        // End of Quran
+                        nextVerseIndex = totalVerses - 1;
+                        break;
+                    }
+                }
+            }
+
+            setCurrentVerseIndex(nextVerseIndex);
+            updateUserProgress({ surah: nextSurah, verseIndex: nextVerseIndex });
         }
     };
 

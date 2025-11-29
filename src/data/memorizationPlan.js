@@ -38,6 +38,21 @@ export const SURAH_NAMES = {
     111: 'Al-Masad', 112: 'Al-Ikhlas', 113: 'Al-Falaq', 114: 'An-Nas'
 };
 
+export const SURAH_VERSE_COUNTS = {
+    1: 7, 2: 286, 3: 200, 4: 176, 5: 120, 6: 165, 7: 206, 8: 75, 9: 129, 10: 109,
+    11: 123, 12: 111, 13: 43, 14: 52, 15: 99, 16: 128, 17: 111, 18: 110, 19: 98, 20: 135,
+    21: 112, 22: 78, 23: 118, 24: 64, 25: 77, 26: 227, 27: 93, 28: 88, 29: 69, 30: 60,
+    31: 34, 32: 30, 33: 73, 34: 54, 35: 45, 36: 83, 37: 182, 38: 88, 39: 75, 40: 85,
+    41: 54, 42: 53, 43: 89, 44: 59, 45: 37, 46: 35, 47: 38, 48: 29, 49: 18, 50: 45,
+    51: 60, 52: 49, 53: 62, 54: 55, 55: 78, 56: 96, 57: 29, 58: 22, 59: 24, 60: 13,
+    61: 14, 62: 11, 63: 11, 64: 18, 65: 12, 66: 12, 67: 30, 68: 52, 69: 52, 70: 44,
+    71: 28, 72: 28, 73: 20, 74: 56, 75: 40, 76: 31, 77: 50, 78: 40, 79: 46, 80: 42,
+    81: 29, 82: 19, 83: 36, 84: 25, 85: 22, 86: 17, 87: 19, 88: 26, 89: 30, 90: 20,
+    91: 15, 92: 21, 93: 11, 94: 8, 95: 8, 96: 19, 97: 5, 98: 8, 99: 8, 100: 11,
+    101: 11, 102: 8, 103: 3, 104: 9, 105: 5, 106: 4, 107: 7, 108: 3, 109: 6, 110: 3,
+    111: 5, 112: 4, 113: 5, 114: 6
+};
+
 export const getDailyTargetVerses = (settings) => {
     // Check if settings is just a number (legacy support) or an object
     if (typeof settings === 'number' || typeof settings === 'string') {
@@ -59,41 +74,51 @@ export const getDailyTargetVerses = (settings) => {
 
 export const getCurrentPlan = (surah, verseIndex, settings = {}, totalSurahVerses = null) => {
     const versesPerDay = getDailyTargetVerses(settings);
-    const verseNum = verseIndex + 1;
+    let currentSurah = parseInt(surah);
+    let currentVerse = verseIndex + 1;
+    let versesNeeded = versesPerDay;
+    const segments = [];
+    const labels = [];
 
-    const chunkIndex = Math.floor((verseNum - 1) / versesPerDay);
-    const startVerse = chunkIndex * versesPerDay + 1;
-    let endVerse = startVerse + versesPerDay - 1;
+    // Safety break to prevent infinite loops
+    let iterations = 0;
+    while (versesNeeded > 0 && iterations < 10) {
+        iterations++;
+        const total = totalSurahVerses && currentSurah === parseInt(surah)
+            ? totalSurahVerses
+            : (SURAH_VERSE_COUNTS[currentSurah] || 100);
 
-    // Cap endVerse if totalSurahVerses is provided
-    if (totalSurahVerses && endVerse > totalSurahVerses) {
-        endVerse = totalSurahVerses;
+        const available = total - currentVerse + 1;
+        const take = Math.min(versesNeeded, available);
+        const endVerse = currentVerse + take - 1;
+
+        const surahName = SURAH_NAMES[currentSurah] || `Surah ${currentSurah}`;
+        segments.push({
+            surah: currentSurah,
+            startVerse: currentVerse,
+            endVerse: endVerse,
+            label: `${surahName} (${currentVerse}-${endVerse})`
+        });
+        labels.push(`${surahName} (${currentVerse}-${endVerse})`);
+
+        versesNeeded -= take;
+
+        if (versesNeeded > 0) {
+            // Move to next Surah
+            if (currentSurah === 114) break; // End of Quran
+            currentSurah++;
+            currentVerse = 1;
+        }
     }
 
-    const surahName = SURAH_NAMES[surah] || `Surah ${surah}`;
-
     return {
-        surah,
-        startVerse,
-        endVerse,
-        label: `${surahName} (Verses ${startVerse}-${endVerse})`,
+        surah: segments[0]?.surah || surah,
+        startVerse: segments[0]?.startVerse || (verseIndex + 1),
+        endVerse: segments[segments.length - 1]?.endVerse || (verseIndex + 1),
+        segments,
+        label: labels.join(' & '),
         isDynamic: true
     };
-};
-
-export const SURAH_VERSE_COUNTS = {
-    1: 7, 2: 286, 3: 200, 4: 176, 5: 120, 6: 165, 7: 206, 8: 75, 9: 129, 10: 109,
-    11: 123, 12: 111, 13: 43, 14: 52, 15: 99, 16: 128, 17: 111, 18: 110, 19: 98, 20: 135,
-    21: 112, 22: 78, 23: 118, 24: 64, 25: 77, 26: 227, 27: 93, 28: 88, 29: 69, 30: 60,
-    31: 34, 32: 30, 33: 73, 34: 54, 35: 45, 36: 83, 37: 182, 38: 88, 39: 75, 40: 85,
-    41: 54, 42: 53, 43: 89, 44: 59, 45: 37, 46: 35, 47: 38, 48: 29, 49: 18, 50: 45,
-    51: 60, 52: 49, 53: 62, 54: 55, 55: 78, 56: 96, 57: 29, 58: 22, 59: 24, 60: 13,
-    61: 14, 62: 11, 63: 11, 64: 18, 65: 12, 66: 12, 67: 30, 68: 52, 69: 52, 70: 44,
-    71: 28, 72: 28, 73: 20, 74: 56, 75: 40, 76: 31, 77: 50, 78: 40, 79: 46, 80: 42,
-    81: 29, 82: 19, 83: 36, 84: 25, 85: 22, 86: 17, 87: 19, 88: 26, 89: 30, 90: 20,
-    91: 15, 92: 21, 93: 11, 94: 8, 95: 8, 96: 19, 97: 5, 98: 8, 99: 8, 100: 11,
-    101: 11, 102: 8, 103: 3, 104: 9, 105: 5, 106: 4, 107: 7, 108: 3, 109: 6, 110: 3,
-    111: 5, 112: 4, 113: 5, 114: 6
 };
 
 export const generatePlan = (settings = {}) => {
@@ -109,38 +134,56 @@ export const generatePlan = (settings = {}) => {
 
     let currentVerse = 1;
 
-    // Surah verse counts (partial list for demo)
-
-
     while (currentDay <= 30) { // Limit to 30 days for now to keep UI snappy
-        const totalVerses = SURAH_VERSE_COUNTS[currentSurah] || 100; // Fallback
+        let versesNeeded = versesPerDay;
+        const segments = [];
+        const labels = [];
 
-        let endVerse = currentVerse + versesPerDay - 1;
-        if (endVerse > totalVerses) {
-            endVerse = totalVerses;
+        // Capture start for the day
+        const dayStartSurah = currentSurah;
+        const dayStartVerse = currentVerse;
+
+        let iterations = 0;
+        while (versesNeeded > 0 && iterations < 10) {
+            iterations++;
+            const total = SURAH_VERSE_COUNTS[currentSurah] || 100;
+            const available = total - currentVerse + 1;
+            const take = Math.min(versesNeeded, available);
+            const endVerse = currentVerse + take - 1;
+
+            const surahName = SURAH_NAMES[currentSurah] || `Surah ${currentSurah}`;
+            segments.push({
+                surah: currentSurah,
+                startVerse: currentVerse,
+                endVerse: endVerse,
+                label: `${surahName} (${currentVerse}-${endVerse})`
+            });
+            labels.push(`${surahName} (${currentVerse}-${endVerse})`);
+
+            versesNeeded -= take;
+
+            if (endVerse === total) {
+                if (currentSurah === 114) {
+                    // Loop back to 1 or stop? Let's stop for now or loop to 1
+                    currentSurah = 1;
+                } else {
+                    currentSurah++;
+                }
+                currentVerse = 1;
+            } else {
+                currentVerse = endVerse + 1;
+            }
         }
-
-        const surahName = SURAH_NAMES[currentSurah] || `Surah ${currentSurah}`;
 
         plan.push({
             day: currentDay,
-            surah: currentSurah,
-            startVerse: currentVerse,
-            endVerse: endVerse,
-            label: `${surahName} (${currentVerse}-${endVerse})`
+            surah: dayStartSurah,
+            startVerse: dayStartVerse,
+            endVerse: segments[segments.length - 1].endVerse,
+            segments: segments,
+            label: labels.join(' & ')
         });
 
-        if (endVerse === totalVerses) {
-            if (currentSurah === 114) {
-                // Loop back to 1 or stop? Let's stop for now or loop to 1
-                currentSurah = 1;
-            } else {
-                currentSurah++;
-            }
-            currentVerse = 1;
-        } else {
-            currentVerse = endVerse + 1;
-        }
         currentDay++;
     }
 

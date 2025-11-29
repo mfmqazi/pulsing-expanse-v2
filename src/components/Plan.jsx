@@ -9,17 +9,23 @@ const Plan = ({ user, setView, updateUserProgress }) => {
     const getStatus = (planItem, index, allDays) => {
         const userSurah = user?.progress?.surah || 1;
         const userVerseIndex = user?.progress?.verseIndex || 0;
-        const memorized = user?.progress?.memorized?.[planItem.surah] || [];
+        const memorized = user?.progress?.memorized || {};
 
         // Count how many verses in this plan are memorized
         let memorizedCount = 0;
-        for (let i = planItem.startVerse - 1; i < planItem.endVerse; i++) {
-            if (memorized.includes(i)) {
-                memorizedCount++;
-            }
-        }
+        let totalVersesInPlan = 0;
 
-        const totalVersesInPlan = planItem.endVerse - planItem.startVerse + 1;
+        const segments = planItem.segments || [{ surah: planItem.surah, startVerse: planItem.startVerse, endVerse: planItem.endVerse }];
+
+        segments.forEach(segment => {
+            const surahMemorized = memorized[segment.surah] || [];
+            totalVersesInPlan += (segment.endVerse - segment.startVerse + 1);
+            for (let i = segment.startVerse - 1; i < segment.endVerse; i++) {
+                if (surahMemorized.includes(i)) {
+                    memorizedCount++;
+                }
+            }
+        });
 
         // Completed: All verses in this day's plan are memorized
         if (memorizedCount === totalVersesInPlan) {
@@ -27,23 +33,18 @@ const Plan = ({ user, setView, updateUserProgress }) => {
         }
 
         // Current: User is currently on this surah and within or past this verse range
-        if (userSurah === planItem.surah) {
-            const currentVerse = userVerseIndex + 1;
-            // If user has passed the start of this range, it's current
-            if (currentVerse >= planItem.startVerse && currentVerse <= planItem.endVerse) {
-                return 'current';
+        // Check if user is currently in any of the segments
+        let isUserInSegment = false;
+        segments.forEach(segment => {
+            if (userSurah === segment.surah) {
+                const currentVerse = userVerseIndex + 1;
+                if (currentVerse >= segment.startVerse && currentVerse <= segment.endVerse) {
+                    isUserInSegment = true;
+                }
             }
-            // If user is past this range but not all memorized, still mark as current
-            if (currentVerse > planItem.endVerse && memorizedCount > 0) {
-                return 'current';
-            }
-        }
+        });
 
-        // If user is on a later surah, previous ones should be completed or current
-        if (userSurah > planItem.surah) {
-            // If not fully memorized but user has moved on, mark as current
-            return 'current';
-        }
+        if (isUserInSegment) return 'current';
 
         // Check if previous day is completed
         if (index > 0) {
