@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 export const memorizationPlan = [
     { day: 1, surah: 1, startVerse: 1, endVerse: 7, label: "Surah Al-Fatiha" },
     { day: 2, surah: 2, startVerse: 1, endVerse: 5, label: "Surah Al-Baqarah (1-5)" },

@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React from 'react';
 import { Play, Award, Calendar, Activity as ActivityIcon, Settings as SettingsIcon, LogOut, HelpCircle } from 'lucide-react';
 import { getCurrentPlan } from '../data/memorizationPlan';

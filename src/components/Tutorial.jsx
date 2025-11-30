@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React from 'react';
 import { ArrowLeft, BookOpen, Settings, Activity, Layers, Mic, Globe } from 'lucide-react';
 import HadithFooter from './HadithFooter';

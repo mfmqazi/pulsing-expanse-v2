@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React, { useState } from 'react';
 import { User, Lock, ArrowRight, UserCircle } from 'lucide-react';
 import { registerUser, loginUser } from '../services/database';

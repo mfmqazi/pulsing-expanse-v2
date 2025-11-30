@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Play, Pause, Check, Type, Languages, AlertCircle, BookOpen, EyeOff, CheckCircle, RotateCcw, SkipForward } from 'lucide-react';
 import { getCurrentPlan, SURAH_VERSE_COUNTS, SURAH_NAMES } from '../data/memorizationPlan';

@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React from 'react';
 import { CheckCircle, Circle, Lock } from 'lucide-react';
 import { generatePlan } from '../data/memorizationPlan';

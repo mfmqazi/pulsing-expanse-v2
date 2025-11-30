@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Settings as SettingsIcon } from 'lucide-react';
 import HadithFooter from './HadithFooter';

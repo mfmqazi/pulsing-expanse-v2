@@ -1,3 +1,4 @@
+// Author: Musaddique Husain Qazi
 import React from 'react';
 import { BookOpen, Home, Settings, Activity } from 'lucide-react';
 
