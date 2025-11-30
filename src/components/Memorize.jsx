@@ -16,6 +16,7 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
     const [showTransliteration, setShowTransliteration] = useState(() => JSON.parse(localStorage.getItem('showTransliteration')) ?? true);
     const [reciterName, setReciterName] = useState('');
     const [translationName, setTranslationName] = useState('');
+    const [planLabel, setPlanLabel] = useState('');
 
     const audioRefs = useRef([]);
 
@@ -52,6 +53,8 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
             // We use the current verse index to determine the dynamic plan
             const currentPlan = getCurrentPlan(surah, currentVerseIndex, user.settings);
             const segments = currentPlan.segments || [{ surah, startVerse: 1, endVerse: 7 }];
+
+            setPlanLabel(currentPlan.label || '');
 
             let allVerses = [];
 
@@ -367,8 +370,7 @@ const Memorize = ({ setView, user, updateUserProgress }) => {
                     </h2>
                     {user?.settings?.versesDisplayMode !== 'entireSurah' && verses.length > 0 && (
                         <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                            Displaying {verses.length} verse{verses.length !== 1 ? 's' : ''}
-                            {verses[0] && ` (${verses[0].verse_key.split(':')[1]}-${verses[verses.length - 1].verse_key.split(':')[1]} of ${SURAH_VERSE_COUNTS[surahNumber]})`}
+                            {planLabel || `Displaying ${verses.length} verse${verses.length !== 1 ? 's' : ''}`}
                         </p>
                     )}
                     {user?.settings?.versesDisplayMode === 'entireSurah' && verses.length > 0 && (
